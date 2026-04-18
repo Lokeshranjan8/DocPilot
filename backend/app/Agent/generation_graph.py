@@ -86,7 +86,6 @@ def readme_gen_func(state: Node2State) -> Node2State:
     chain = prompt | llm | parser
     readme_text = chain.invoke({"files": files_str})
 
-    # print("RAW LLM RESPONSE::",readme_text)
 
 
     state["readme"] = readme_text.get("readme", " ")

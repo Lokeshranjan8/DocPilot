@@ -33,7 +33,6 @@ def fetch_github_repo(repo: str):
     user = path[0]
     repo_name = path[1]
     
-    # Validate GitHub domain (optional but recommended)
     if parsed.netloc and parsed.netloc not in ['github.com', 'www.github.com']:
         raise HTTPException(
             status_code=400,

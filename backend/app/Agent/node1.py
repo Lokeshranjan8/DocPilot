@@ -116,10 +116,8 @@ def build_judge_graph():
     graph = StateGraph(node1state)
 
     graph.add_node("judge_files", judge_files)
-    # graph.add_node("read_data",read_data)
 
     graph.add_edge(START, "judge_files")
-    # graph.add_edge("judge_files","read_data")
     graph.add_edge("judge_files", END)
 
 
