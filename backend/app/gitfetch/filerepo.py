@@ -50,7 +50,6 @@ def file_system(repo_url: str):
     traverse_repo(repo,metadata)
     
     metadata.update({"repo": repo.full_name})
-    # json_data = json.dumps(metadata, indent=4, ensure_ascii=False)
     set_cache(key,metadata)
     return metadata
 
