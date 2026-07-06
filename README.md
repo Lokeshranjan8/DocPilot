@@ -1,2 +1,2 @@
-# repo-doc-agent
+# DocPilot
 

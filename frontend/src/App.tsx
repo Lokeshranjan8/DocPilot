@@ -93,7 +93,8 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
 
 
 export const App = () => {
-  const [link, setLink] = useState("");
+  // const [link, setLink] = useState("");
+
 
   const handleGenerate = async (repoUrl: string): Promise<string> => {
     const response_struct = {
@@ -121,7 +122,7 @@ export const App = () => {
       <div className="w-full max-w-2xl space-y-8">
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight">
-            Repo Doc Agent
+            DocPilot
           </h1>
           <p className="text-muted-foreground text-sm">
             Enter a GitHub repository link to generate documentation
