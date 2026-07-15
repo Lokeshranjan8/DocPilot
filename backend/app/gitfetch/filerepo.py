@@ -23,7 +23,7 @@ def traverse_repo(repo,metadata, path=""):
             "name": x.name
         })
         if x.type == "dir":
-            traverse_repo(repo, x.path)
+            traverse_repo(repo, metadata, x.path)
 
 
     
@@ -52,5 +52,4 @@ def file_system(repo_url: str):
     metadata.update({"repo": repo.full_name})
     set_cache(key,metadata)
     return metadata
-
 

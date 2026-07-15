@@ -1,5 +1,5 @@
-from typing_extensions import List, Dict, TypedDict
-from langgraph.graph import StateGraph, END , START
+from typing_extensions import Dict, List, TypedDict
+from langgraph.graph import END, START, StateGraph
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_groq import ChatGroq
@@ -8,13 +8,11 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-# STATE
-class node1state(TypedDict,total=False):
+class RepositoryState(TypedDict, total=False):
     repo: str
     files: List[Dict[str, str]]
     readme_imp: List[str]
 
-# LLM
 llm = ChatGroq(
     model="llama-3.1-8b-instant",
     api_key=os.getenv("GROQ_API"),
@@ -47,17 +45,20 @@ CRITICAL FILES TO INCLUDE:
 - .github/workflows/main.yml, .github/workflows/ci.yml, .github/workflows/deploy.yml
 - .gitlab-ci.yml, Jenkinsfile
 
+**Existing Documentation:**
+- README.md (include it when present so it can be improved)
+
 STRICT EXCLUSIONS - NEVER INCLUDE:
 
 **Source Code & Deep Nested Files:**
 - Any .py, .js, .ts, .tsx, .jsx files inside: src/, app/, components/, pages/, lib/, utils/, core/
 - Files 3+ levels deep (e.g., backend/app/core/config.py) UNLESS it's Dockerfile or docker-compose
-- Example excludes: backend/app/Agent/node1.py, frontend/src/components/ui/button.tsx
+- Example excludes: backend/app/Agent/repository_analyzer.py, frontend/src/components/ui/button.tsx
 - never include package-lock.json
 
 **Tests & Documentation:**
 - test*.*, *test.*, *.spec.*, *.test.*, tests.py, anything in __tests__/ or tests/
-- README.md, LICENSE, CONTRIBUTING.md, docs/
+- LICENSE, CONTRIBUTING.md, docs/
 
 **Build Outputs & IDE:**
 - node_modules/, dist/, build/, __pycache__/, .venv/, venv/, target/, out/
@@ -101,24 +102,27 @@ Now analyze and return ONLY the JSON object.
 
 
 
-# def functions:
-def judge_files(state: node1state) -> node1state:
+def judge_files(state: RepositoryState) -> RepositoryState:
     file_paths = [f["path"] for f in state["files"]]
 
     chain = prompt | llm | parser
     result = chain.invoke({"file_paths": file_paths})
 
-    state["readme_imp"] = result.get("readme_imp", [])
-    return state
+    selected_files = result.get("readme_imp", [])
+    existing_readmes = [
+        path for path in file_paths
+        if path.rsplit("/", 1)[-1].lower() == "readme.md"
+    ]
+    selected_files = [path for path in selected_files if path in file_paths]
+    return {"readme_imp": list(dict.fromkeys(selected_files + existing_readmes))}
 
 
 def build_judge_graph():
-    graph = StateGraph(node1state)
+    graph = StateGraph(RepositoryState)
 
     graph.add_node("judge_files", judge_files)
 
     graph.add_edge(START, "judge_files")
     graph.add_edge("judge_files", END)
-
 
     return graph.compile()

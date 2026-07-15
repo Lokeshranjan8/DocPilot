@@ -1,99 +1,100 @@
-from fastapi import FastAPI, HTTPException, Request
+from uuid import uuid4
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.gitfetch.git import fetch_github_repo
-from app.gitfetch.filerepo import file_system
-from app.Agent.node1 import build_judge_graph, node1state
-from app.gitfetch.storingdata import storingdata
-from app.Agent.generation_graph import generate_readme_graph
-from pydantic import BaseModel
+from langgraph.types import Command
+from pydantic import BaseModel, Field
 
+from app.Agent.readme_workflow import generate_readme_graph
+# from app.Agent.repository_analyzer import build_judge_graph
+# from app.gitfetch.filerepo import file_system
+# from app.gitfetch.git import fetch_github_repo
+# from app.gitfetch.storingdata import storingdata
 
-import json 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"], 
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-graph = build_judge_graph()
-readme_gen = generate_readme_graph()
+# judge_graph = build_judge_graph()
+readme_graph = generate_readme_graph()
 
 
 class RepoRequest(BaseModel):
     repo_url: str
 
+
+class ReviewRequest(BaseModel):
+    session_id: str
+    satisfied: bool
+    feedback: str = Field(default="", max_length=4000)
+
+
+def config(session_id: str):
+    return {"configurable": {"thread_id": session_id}}
+
+
+def review_response(result: dict, session_id: str) -> dict:
+    interrupts = result.get("__interrupt__", [])
+    if interrupts:
+        review = interrupts[0].value
+        return {
+            "status": "awaiting_review",
+            "session_id": session_id,
+            "readme": review["readme"],
+            "revision": review["revision"],
+            "message": review["message"],
+        }
+    return {
+        "status": "completed",
+        "session_id": session_id,
+        "readme": result.get("readme", ""),
+        "revision": result.get("revision", 1),
+    }
+
+
 @app.get("/")
 def root():
-    return {"message": "Hello, World!"}
-
+    return {"message": "DocPilot API"}
 
 
 @app.post("/fetchrepo")
 def fetch_repo(data: RepoRequest):
     try:
-
-
-        # # repo = fetch_github_repo(repo_url)
-        # print("dont #1")
-        # payload = file_system(repo_url)
-        # print("dont #2")
-        # result = graph.invoke(payload)
-        # print("dont #3")
-        # data = {
-        #     "repo": result["repo"],
-        #     "readme_imp": result["readme_imp"]
-        # }
-        # # print("dont #4")
-        # raw_data = storingdata(data)
-        # # print("dont #5")
-
-
-        data = {
-            "raw_data":[
+        # fetch_github_repo(data.repo_url)
+        # repo = file_system(data.repo_url)
+        # judged_repo = judge_graph.invoke(repo)
+        # raw_data = storingdata(judged_repo)
+        raw_data = {
+            "raw_data": [
                 {
-                  "path": "backend/requirement.txt",
-                  "content": "fastapi\nuvicorn\nrequests\npython-dotenv\nPyGithub\nlanggraph\nlangchain\nlangchain-groq  \npydantic\nredis\n"
-                },
-                {
-                  "path": "backend/Dockerfile",
-                  "content": "FROM python:3.11-slim\n\nWORKDIR /app\n\nCOPY requirement.txt .\n\nRUN pip install --no-cache-dir -r requirement.txt\n\nCOPY . .\n\nEXPOSE 8081\n\nCMD [\"uvicorn\",\"app.main:app\",\"--host\", \"0.0.0.0\", \"--port\",\"8081\"]"
-                },
-                {
-                  "path": "docker-compose.yml",
-                  "content": "#docker-compose.yml\nversion: \"3.9\"\n\nservices:\n  backend:\n    build: ./backend\n    container_name: doc-agent\n    ports:\n      - \"8081:8081\"\n    env_file:\n      - ./backend/app/.env\n    depends_on:\n      - redis\n    \n\n  redis:\n    image: redis:7-alpine\n    container_name: redis-agent\n    ports:\n      - \"6379:6379\"\n    env_file:\n      - ./backend/app/.env\n    volumes:\n      - redis_data:/data\n\n\nvolumes:\n  redis_data:"
-                },
-                {
-                  "path": "frontend/package.json",
-                  "content": "{\n  \"name\": \"frontend\",\n  \"private\": true,\n  \"version\": \"0.0.0\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"vite\",\n    \"build\": \"tsc -b && vite build\",\n    \"lint\": \"eslint .\",\n    \"preview\": \"vite preview\"\n  },\n  \"dependencies\": {\n    \"@radix-ui/react-dropdown-menu\": \"^2.1.16\",\n    \"@radix-ui/react-slot\": \"^1.2.4\",\n    \"@tailwindcss/vite\": \"^4.1.18\",\n    \"class-variance-authority\": \"^0.7.1\",\n    \"clsx\": \"^2.1.1\",\n    \"lucide-react\": \"^0.562.0\",\n    \"react\": \"^19.2.0\",\n    \"react-dom\": \"^19.2.0\",\n    \"react-router\": \"^7.12.0\",\n    \"tailwind-merge\": \"^3.4.0\",\n    \"tailwindcss\": \"^4.1.18\"\n  },\n  \"devDependencies\": {\n    \"@eslint/js\": \"^9.39.1\",\n    \"@types/node\": \"^24.10.8\",\n    \"@types/react\": \"^19.2.5\",\n    \"@types/react-dom\": \"^19.2.3\",\n    \"@vitejs/plugin-react-swc\": \"^4.2.2\",\n    \"eslint\": \"^9.39.1\",\n    \"eslint-plugin-react-hooks\": \"^7.0.1\",\n    \"eslint-plugin-react-refresh\": \"^0.4.24\",\n    \"globals\": \"^16.5.0\",\n    \"tw-animate-css\": \"^1.4.0\",\n    \"typescript\": \"~5.9.3\",\n    \"typescript-eslint\": \"^8.46.4\",\n    \"vite\": \"^7.2.4\"\n  }\n}\n"
+                    "path": "backend/requirement.txt",
+                    "content": "fastapi\nuvicorn\nrequests\npython-dotenv\nPyGithub\nlanggraph\nlangchain\nlangchain-groq\npydantic\nredis\n",
                 }
             ]
         }
 
-      
-
-        try:
-            result_1= readme_gen.invoke(data)
-            reamde_fledge_data = {
-                "readme": result_1["readme"]
-            }
-            
-            return reamde_fledge_data
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        session_id = str(uuid4())
+        result = readme_graph.invoke(raw_data, config(session_id))
+        return review_response(result, session_id)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-
-@app.get("/readtestfile")
-def read_testfile():
-    print("check this testing ")
-    raw_file = reading_raw_data()
-    print(type(raw_file))
-    return raw_file
+@app.post("/review")
+def review_readme(data: ReviewRequest):
+    try:
+        result = readme_graph.invoke(
+            Command(resume={"satisfied": data.satisfied, "feedback": data.feedback}),
+            config(data.session_id),
+        )
+        return review_response(result, data.session_id)
+    except Exception as error:
+        raise HTTPException(status_code=400, detail="Review session was not found or could not be resumed") from error

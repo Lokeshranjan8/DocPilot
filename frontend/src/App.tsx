@@ -8,9 +8,17 @@ import { cn } from "@/lib/utils";
 
 
 interface ReadmeGeneratorProps {
-  onGenerate: (repoUrl: string) => Promise<string>;
+  onGenerate: (repoUrl: string) => Promise<ReadmeResponse>;
+  onReview: (sessionId: string, satisfied: boolean, feedback?: string) => Promise<ReadmeResponse>;
 }
 
+interface ReadmeResponse {
+  status: "awaiting_review" | "completed";
+  session_id: string;
+  readme: string;
+  revision: number;
+  message?: string;
+}
 
 const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
   h1: ({ children }) => (
@@ -93,29 +101,29 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
 
 
 export const App = () => {
-  // const [link, setLink] = useState("");
-
-
-  const handleGenerate = async (repoUrl: string): Promise<string> => {
-    const response_struct = {
-      method: 'POST',
+  async function request(path: string, body: object): Promise<ReadmeResponse> {
+    const response = await fetch(`http://localhost:8081${path}`, {
+      method: "POST",
       headers: {
-        'Content-type': 'application/json'
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        repo_url: repoUrl
-      })
-    };
-
-    const response = await fetch('http://localhost:8081/fetchrepo', response_struct);
+      body: JSON.stringify(body),
+    });
     const data = await response.json();
 
-    if (data.readme) {
-      return data.readme;
-    } else {
-      throw new Error("No readme generated");
+    if (!response.ok || !data.readme) {
+      throw new Error(data.detail || "Could not generate the README");
     }
-  };
+    return data;
+  }
+
+  function handleGenerate(repoUrl: string) {
+    return request("/fetchrepo", { repo_url: repoUrl });
+  }
+
+  function handleReview(sessionId: string, satisfied: boolean, feedback = "") {
+    return request("/review", { session_id: sessionId, satisfied, feedback });
+  }
 
   return (
     <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/30 flex items-center justify-center p-4">
@@ -129,7 +137,7 @@ export const App = () => {
           </p>
         </div>
 
-        <ReadmeGenerator onGenerate={handleGenerate} />
+        <ReadmeGenerator onGenerate={handleGenerate} onReview={handleReview} />
       </div>
     </div>
   );
@@ -138,23 +146,57 @@ export const App = () => {
 
 
 
-function ReadmeGenerator({ onGenerate }: ReadmeGeneratorProps) {
+function ReadmeGenerator({ onGenerate, onReview }: ReadmeGeneratorProps) {
   const [linkInput, setLinkInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
   const [tab, setTab] = useState<"preview" | "raw">("preview");
   const [copied, setCopied] = useState(false);
+  const [sessionId, setSessionId] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [awaitingReview, setAwaitingReview] = useState(false);
+  const [status, setStatus] = useState("");
 
   async function handleSubmit() {
     if (!linkInput.trim() || loading) return;
     setLoading(true);
     setResult("");
+    setFeedback("");
+    setStatus("");
+    setSessionId("");
+    setAwaitingReview(false);
     try {
-      const md = await onGenerate(linkInput.trim());
-      setResult(md);
+      const data = await onGenerate(linkInput.trim());
+      setResult(data.readme);
+      setSessionId(data.session_id);
+      setAwaitingReview(data.status === "awaiting_review");
+      setStatus(data.message || "README ready for review.");
       setTab("preview");
     } catch (error) {
-      setResult("Failed to generate README. Please check the repository URL.");
+      setResult(error instanceof Error ? error.message : "Failed to generate README.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReview(satisfied: boolean) {
+    if (loading || !sessionId || (!satisfied && !feedback.trim())) return;
+    setLoading(true);
+    setStatus(satisfied ? "Finalizing your README..." : "Updating your README with feedback...");
+    try {
+      const data = await onReview(sessionId, satisfied, feedback.trim());
+      setResult(data.readme);
+      setSessionId(data.session_id);
+      setAwaitingReview(data.status === "awaiting_review");
+      setFeedback("");
+      setStatus(
+        data.status === "completed"
+          ? "README approved and ready to use."
+          : data.message || "Updated README ready for review.",
+      );
+      setTab("preview");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update the README.");
     } finally {
       setLoading(false);
     }
@@ -279,9 +321,45 @@ function ReadmeGenerator({ onGenerate }: ReadmeGeneratorProps) {
               </pre>
             )}
           </div>
+
+          {sessionId && (
+            <div className="mt-4 rounded-lg border border-border/50 bg-card p-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium">
+                  {awaitingReview ? "Is this README satisfactory?" : "README approved"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {status || "Review the generated documentation before you use it."}
+                </p>
+              </div>
+
+              {awaitingReview && (
+                <>
+                  <textarea
+                    value={feedback}
+                    onChange={(event) => setFeedback(event.target.value)}
+                    placeholder="What should be improved?"
+                    className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+                    disabled={loading}
+                  />
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleReview(false)}
+                      disabled={loading || !feedback.trim()}
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Revise README"}
+                    </Button>
+                    <Button onClick={() => handleReview(true)} disabled={loading}>
+                      Looks good
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-
