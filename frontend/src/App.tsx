@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Link2, Loader2, Copy, GitPullRequest, Check, FileText, Code } from "lucide-react";
+import { Link2, Loader2, Copy, GitPullRequest, Check, FileText, Code, Github, LogOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -101,9 +101,21 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
 
 
 export const App = () => {
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8081";
+  const [user, setUser] = useState<{ login: string; name?: string | null; avatar_url?: string | null } | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${apiUrl}/auth/me`, { credentials: "include" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then(setUser)
+      .finally(() => setAuthLoading(false));
+  }, [apiUrl]);
+
   async function request(path: string, body: object): Promise<ReadmeResponse> {
-    const response = await fetch(`http://localhost:8081${path}`, {
+    const response = await fetch(`${apiUrl}${path}`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },
@@ -125,19 +137,47 @@ export const App = () => {
     return request("/review", { session_id: sessionId, satisfied, feedback });
   }
 
+  function signIn() {
+    window.location.assign(`${apiUrl}/auth/github`);
+  }
+
+  async function signOut() {
+    await fetch(`${apiUrl}/auth/logout`, { method: "POST", credentials: "include" });
+    setUser(null);
+  }
+
   return (
     <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/30 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl space-y-8">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            DocPilot
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Enter a GitHub repository link to generate documentation
-          </p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="text-left space-y-2">
+              <h1 className="text-3xl font-semibold tracking-tight">DocPilot</h1>
+              <p className="text-muted-foreground text-sm">Enter a GitHub repository link to generate documentation</p>
+            </div>
+            {!authLoading && (user ? (
+              <div className="flex items-center gap-2 text-sm">
+                {user.avatar_url && <img src={user.avatar_url} alt="" className="h-7 w-7 rounded-full" />}
+                <span className="hidden sm:inline text-muted-foreground">{user.name || user.login}</span>
+                <Button variant="outline" size="sm" onClick={signOut} className="gap-1.5">
+                  <LogOut className="h-3.5 w-3.5" /> Sign out
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={signIn} size="sm" className="gap-1.5">
+                <Github className="h-4 w-4" /> Sign in with GitHub
+              </Button>
+            ))}
+          </div>
         </div>
 
-        <ReadmeGenerator onGenerate={handleGenerate} onReview={handleReview} />
+        {user ? (
+          <ReadmeGenerator onGenerate={handleGenerate} onReview={handleReview} />
+        ) : !authLoading && (
+          <div className="rounded-lg border border-border/50 bg-card p-6 text-center text-sm text-muted-foreground">
+            Sign in with GitHub to generate documentation.
+          </div>
+        )}
       </div>
     </div>
   );
