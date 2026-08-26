@@ -8,5 +8,4 @@ langchain
 langchain-groq  
 pydantic
 redis
-httpx
-itsdangerous
+firebase-admin

@@ -1,12 +1,7 @@
-import os
-from threading import Lock
-from urllib.parse import urlencode
 from uuid import uuid4
 
-import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
@@ -16,25 +11,14 @@ from app.Agent.readme_workflow import generate_readme_graph
 # from app.gitfetch.git import fetch_github_repo
 # from app.gitfetch.storingdata import storingdata
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET")
-SESSION_SECRET = os.getenv("SESSION_SECRET")
-SESSION_COOKIE = "docpilot_session"
+from app.auth import get_current_user
 
-if not SESSION_SECRET:
-    # A persistent value must be supplied in production so sessions survive restarts.
-    SESSION_SECRET = "development-only-change-me"
-
-users: dict[str, dict] = {}
-github_users: dict[str, str] = {}
-users_lock = Lock()
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,31 +37,6 @@ class ReviewRequest(BaseModel):
     satisfied: bool
     feedback: str = Field(default="", max_length=4000)
 
-
-def github_configured() -> None:
-    if not GITHUB_CLIENT_ID or not GITHUB_CLIENT_SECRET:
-        raise HTTPException(status_code=503, detail="GitHub OAuth is not configured")
-
-
-def current_user(request: Request) -> dict:
-    """Return the signed-in user from the server-side session cookie."""
-    from itsdangerous import BadSignature, URLSafeTimedSerializer
-
-    token = request.cookies.get(SESSION_COOKIE)
-    if not token:
-        raise HTTPException(status_code=401, detail="Sign in with GitHub to continue")
-    try:
-        user_id = URLSafeTimedSerializer(SESSION_SECRET, salt="docpilot-session").loads(
-            token, max_age=60 * 60 * 24 * 7
-        )
-    except BadSignature as error:
-        raise HTTPException(status_code=401, detail="Your session has expired") from error
-
-    with users_lock:
-        user = users.get(user_id)
-    if not user:
-        raise HTTPException(status_code=401, detail="Your local session has expired")
-    return user
 
 
 def config(session_id: str):
@@ -108,80 +67,12 @@ def root():
     return {"message": "DocPilot API"}
 
 
-@app.get("/auth/github")
-def github_login(request: Request):
-    github_configured()
-    from itsdangerous import URLSafeTimedSerializer
-
-    state = URLSafeTimedSerializer(SESSION_SECRET, salt="docpilot-oauth-state").dumps("github")
-    callback_url = str(request.url_for("github_callback"))
-    authorization_url = "https://github.com/login/oauth/authorize?" + urlencode(
-        {"client_id": GITHUB_CLIENT_ID, "redirect_uri": callback_url, "scope": "read:user user:email", "state": state}
-    )
-    return RedirectResponse(authorization_url, status_code=302)
-
-
-@app.get("/auth/github/callback", name="github_callback")
-async def github_callback(code: str, state: str):
-    github_configured()
-    from itsdangerous import BadSignature, URLSafeTimedSerializer
-
-    try:
-        URLSafeTimedSerializer(SESSION_SECRET, salt="docpilot-oauth-state").loads(state, max_age=600)
-    except BadSignature as error:
-        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state") from error
-
-    async with httpx.AsyncClient(timeout=10) as client:
-        token_response = await client.post(
-            "https://github.com/login/oauth/access_token",
-            headers={"Accept": "application/json"},
-            data={"client_id": GITHUB_CLIENT_ID, "client_secret": GITHUB_CLIENT_SECRET, "code": code},
-        )
-        token_response.raise_for_status()
-        access_token = token_response.json().get("access_token")
-        if not access_token:
-            raise HTTPException(status_code=401, detail="GitHub did not grant access")
-        profile_response = await client.get(
-            "https://api.github.com/user",
-            headers={"Authorization": f"Bearer {access_token}", "Accept": "application/vnd.github+json"},
-        )
-        profile_response.raise_for_status()
-        profile = profile_response.json()
-
-    github_id = str(profile["id"])
-    with users_lock:
-        user_id = github_users.get(github_id, str(uuid4()))
-        user = {
-            "id": user_id,
-            "github_id": github_id,
-            "login": profile["login"],
-            "name": profile.get("name"),
-            "avatar_url": profile.get("avatar_url"),
-            "email": profile.get("email"),
-        }
-        users[user_id] = user
-        github_users[github_id] = user_id
-
-    session = URLSafeTimedSerializer(SESSION_SECRET, salt="docpilot-session").dumps(user_id)
-    response = RedirectResponse(FRONTEND_URL, status_code=302)
-    response.set_cookie(SESSION_COOKIE, session, max_age=60 * 60 * 24 * 7, httponly=True, samesite="lax")
-    return response
-
-
-@app.get("/auth/me")
-def me(user: dict = Depends(current_user)):
-    return user
-
-
-@app.post("/auth/logout")
-def logout():
-    response = JSONResponse({"ok": True})
-    response.delete_cookie(SESSION_COOKIE)
-    return response
-
+@app.get("/get")
+def auth():
+    return {"message":"trying to learn auth"}
 
 @app.post("/fetchrepo")
-def fetch_repo(data: RepoRequest, _user: dict = Depends(current_user)):
+def fetch_repo(data: RepoRequest):
     try:
         # fetch_github_repo(data.repo_url)
         # repo = file_system(data.repo_url)
@@ -206,7 +97,7 @@ def fetch_repo(data: RepoRequest, _user: dict = Depends(current_user)):
 
 
 @app.post("/review")
-def review_readme(data: ReviewRequest, _user: dict = Depends(current_user)):
+def review_readme(data: ReviewRequest):
     try:
         result = readme_graph.invoke(
             Command(resume={"satisfied": data.satisfied, "feedback": data.feedback}),

@@ -10,8 +10,9 @@ services:
     env_file:
       - ./backend/app/.env
     depends_on:
-      redis:
-        condition: service_started
+      - redis
+    volumes:
+      - ./serviceAccountKey.json:/app/serviceAccountKey.json:ro
     
 
   redis:
