@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Github, Loader2, LogOut } from "lucide-react";
 import {
   GithubAuthProvider,
@@ -20,46 +20,16 @@ console.log(`app url = ${apiUrl}`)
 
 export const App = () => {
   const [user, setUser] = useState<User | null>(null);
+  const [authInitialized, setAuthInitialized] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [backendVerified, setBackendVerified] = useState(false);
 
   useEffect(() => onAuthStateChanged(auth, (nextUser) => {
     setUser(nextUser);
-    setBackendVerified(false);
-    setLoading(Boolean(nextUser));
+    setAuthInitialized(true);
+    setLoading(false);
     setMessage("");
   }), []);
-
-  const verifyBackend = useCallback(async (currentUser: User) => {
-    setMessage("");
-    try {
-      const token = await currentUser.getIdToken();
-      const response = await fetch(`${apiUrl}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) throw new Error("Backend did not accept this Firebase token.");
-      setBackendVerified(true);
-    } catch (verificationError) {
-      setBackendVerified(false);
-      setMessage(verificationError instanceof Error ? verificationError.message : "Verification failed.");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    let active = true;
-    void verifyBackend(user).finally(() => {
-      if (active) setLoading(false);
-    });
-    return () => {
-      active = false;
-    };
-  }, [user, verifyBackend]);
 
   async function signIn() {
     setMessage("");
@@ -106,7 +76,15 @@ export const App = () => {
     });
   }
 
-  if (user && backendVerified) {
+  if (!authInitialized) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center px-5">
+        <Loader2 className="h-6 w-6 animate-spin text-green-500" aria-label="Restoring your session" />
+      </main>
+    );
+  }
+
+  if (user) {
     return (
       <main className="min-h-screen bg-background text-foreground px-5 py-8">
         <section className="mx-auto w-full max-w-5xl">
@@ -135,29 +113,19 @@ export const App = () => {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Welcome to DocPilot</h1>
           <p className="mt-2 text-sm leading-6 text-zinc-400">
-            {user ? `Signed in as ${user.displayName || user.email || "GitHub user"}` : "Sign in to continue to your workspace."}
+            Sign in to continue to your workspace.
           </p>
         </div>
 
-        {user ? (
-          <div className="space-y-3">
-            <p className="text-center text-sm text-zinc-400">{loading ? "Verifying your account..." : "Backend verification failed."}</p>
-            {!loading && <Button onClick={() => void verifyBackend(user)} className="h-11 w-full bg-green-500 text-sm font-semibold text-black hover:bg-green-400">Retry verification</Button>}
-            <Button variant="outline" onClick={signOutUser} className="h-11 w-full border-zinc-700 bg-transparent text-white hover:bg-zinc-900 hover:text-white">
-              <LogOut className="mr-2 h-4 w-4" /> Sign out
-            </Button>
-          </div>
-        ) : (
-          <Button
-            type="button"
-            onClick={signIn}
-            disabled={loading}
-            className="h-11 w-full bg-green-500 text-sm font-semibold text-black hover:bg-green-400 focus-visible:ring-green-500"
-          >
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Github className="mr-2 h-4 w-4" />}
-            Continue with GitHub
-          </Button>
-        )}
+        <Button
+          type="button"
+          onClick={signIn}
+          disabled={loading}
+          className="h-11 w-full bg-green-500 text-sm font-semibold text-black hover:bg-green-400 focus-visible:ring-green-500"
+        >
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Github className="mr-2 h-4 w-4" />}
+          Continue with GitHub
+        </Button>
 
         {message && <p className="mt-5 text-center text-xs text-zinc-400">{message}</p>}
       </section>
