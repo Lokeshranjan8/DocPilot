@@ -1,0 +1,4 @@
+app/.env
+app/serviceAccountKey.json
+__pycache__/
+*.py[cod]

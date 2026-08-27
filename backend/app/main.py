@@ -1,6 +1,7 @@
+import os
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.types import Command
 from pydantic import BaseModel, Field
@@ -18,7 +19,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[os.getenv("FRONTEND_URL")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,12 +68,19 @@ def root():
     return {"message": "DocPilot API"}
 
 
-@app.get("/get")
-def auth():
-    return {"message":"trying to learn auth"}
+
+@app.get("/auth/me")
+def current_user(user: dict = Depends(get_current_user)):
+    print("authentication on testing phase")
+    return {
+        "uid": user["uid"],
+        "email": user.get("email"),
+        "name": user.get("name") or user.get("display_name"),
+        "picture": user.get("picture"),
+    }
 
 @app.post("/fetchrepo")
-def fetch_repo(data: RepoRequest):
+def fetch_repo(data: RepoRequest, _user: dict = Depends(get_current_user)):
     try:
         # fetch_github_repo(data.repo_url)
         # repo = file_system(data.repo_url)
@@ -97,7 +105,7 @@ def fetch_repo(data: RepoRequest):
 
 
 @app.post("/review")
-def review_readme(data: ReviewRequest):
+def review_readme(data: ReviewRequest, _user: dict = Depends(get_current_user)):
     try:
         result = readme_graph.invoke(
             Command(resume={"satisfied": data.satisfied, "feedback": data.feedback}),
